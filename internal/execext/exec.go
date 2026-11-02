@@ -14,6 +14,7 @@ import (
 	"mvdan.cc/sh/x/coreutils"
 
 	"github.com/go-task/task/v3/errors"
+	"github.com/go-task/task/v3/internal/terminalstatus"
 )
 
 // ErrNilOptions is returned when a nil options is given
@@ -66,7 +67,7 @@ func RunCommand(ctx context.Context, opts *RunCommandOptions) error {
 	r, err := interp.New(
 		interp.BashOpts(bashOpts...),
 		interp.Params(params...),
-		interp.Env(expand.ListEnviron(environ...)),
+		interp.Env(expand.ListEnviron(terminalstatus.ChildEnv(environ)...)),
 		interp.ExecHandlers(execHandlers()...),
 		interp.OpenHandler(openHandler),
 		interp.StdIO(opts.Stdin, opts.Stdout, opts.Stderr),

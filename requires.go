@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"slices"
 
 	"github.com/elliotchance/orderedmap/v3"
@@ -28,7 +29,7 @@ func (e *Executor) newPrompter() *input.Prompter {
 // variables, and prompts for them upfront. This is used for deps which execute
 // in parallel, so all prompts must happen before execution to avoid interleaving.
 // Prompted values are stored in e.promptedVars for injection into task calls.
-func (e *Executor) promptDepsVars(calls []*Call) error {
+func (e *Executor) promptDepsVars(ctx context.Context, calls []*Call) error {
 	if !e.canPrompt() {
 		return nil
 	}
@@ -103,7 +104,7 @@ func (e *Executor) promptDepsVars(calls []*Call) error {
 	e.promptedVars = ast.NewVars()
 
 	for v := range varsMap.Values() {
-		value, err := prompter.Prompt(v.Name, getEnumValues(v.Enum))
+		value, err := promptVariable(ctx, prompter, v.Name, getEnumValues(v.Enum))
 		if err != nil {
 			if errors.Is(err, input.ErrCancelled) {
 				return &errors.TaskCancelledByUserError{TaskName: "interactive prompt"}
@@ -119,7 +120,7 @@ func (e *Executor) promptDepsVars(calls []*Call) error {
 // promptTaskVars prompts for any missing required vars from a single task.
 // Used for sequential task calls (cmds) where we can prompt just-in-time.
 // Returns true if any vars were prompted (caller should recompile the task).
-func (e *Executor) promptTaskVars(t *ast.Task, call *Call) (bool, error) {
+func (e *Executor) promptTaskVars(ctx context.Context, t *ast.Task, call *Call) (bool, error) {
 	if !e.canPrompt() || t.Requires == nil || len(t.Requires.Vars) == 0 {
 		return false, nil
 	}
@@ -142,7 +143,7 @@ func (e *Executor) promptTaskVars(t *ast.Task, call *Call) (bool, error) {
 	prompter := e.newPrompter()
 
 	for _, v := range missing {
-		value, err := prompter.Prompt(v.Name, getEnumValues(v.Enum))
+		value, err := promptVariable(ctx, prompter, v.Name, getEnumValues(v.Enum))
 		if err != nil {
 			if errors.Is(err, input.ErrCancelled) {
 				return false, &errors.TaskCancelledByUserError{TaskName: t.Name()}

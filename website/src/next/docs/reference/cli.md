@@ -294,6 +294,55 @@ task build --color=false
 NO_COLOR=1 task build
 ```
 
+#### `--terminal-status <mode>`
+
+Report execution state to terminals supporting the [Program Status Protocol
+(OSC 7501)](https://superlogical.com/rex/docs/build/program-status) and set the
+application's terminal title (OSC 2) to the invocation, such as `task build`.
+Command output is unchanged; Task does not rename Rex blocks or tabs through a
+terminal-specific API.
+
+- `auto` (default): report on terminal stderr, except in CI or with `TERM=dumb`.
+- `always`: report on terminal stderr even in CI or with `TERM=dumb`.
+- `never`: disable reporting.
+
+Even `always` does not write escape sequences to redirected stderr. The
+`TASK_TERMINAL_STATUS` environment variable sets the default; the flag takes
+precedence. This setting controls both status and title reporting and is
+independent of color and `--silent`.
+
+```bash
+task build --terminal-status=auto
+TASK_TERMINAL_STATUS=never task build
+```
+
+Task reports working, completed, failed, and waiting-for-input states for its own
+prompts. Watch mode reports idle after a successful cycle and preserves failure
+until the next cycle; interruption reports idle. Parallel tasks finish as one
+invocation. Status messages do not contain commands, raw errors, or entered values.
+Task does not infer readiness or input waits inside arbitrary child programs.
+
+The outer Task invocation owns the root status record. Repeated invocations
+replace that record rather than creating a history of completed child records.
+External nested Task processes inherit an internal environment marker and do not
+report their own status or titles, even with `always`; their outcome is reflected
+by the parent. This also means their input waits are not reported by the parent.
+Dependencies within the same Task process still use the outer activity.
+
+Task sets the invocation title once. Dependencies and watch cycles do not rename
+it, and completion or cancellation updates only the status record. The shell is
+responsible for setting its own title at the next prompt: Task does not query,
+save, restore, or guess the previous title. Without shell title integration, the
+last application title remains until another program changes it. Terminal
+preferences or manual labels may override the application-provided title.
+
+Task never clears all program-status records. Older child records left by previous
+versions or other programs are left to the terminal's own lifetime policy.
+
+Help, completion, task listings, summaries, dry runs, and freshness checks
+(`--status`) do not report program status. Unsupported terminals can ignore the
+reports; Task does not query the terminal or read stdin to detect support.
+
 ### Task Information
 
 #### `--status`

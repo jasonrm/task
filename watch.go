@@ -12,8 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/helshabini/fsbroker"
 	"github.com/puzpuzpuz/xsync/v4"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-task/task/v3/errors"
 	"github.com/go-task/task/v3/internal/fingerprint"
@@ -34,16 +36,6 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 	e.Logger.Errf(logger.Green, "task: Started watching for tasks: %s\n", strings.Join(tasks, ", "))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	for _, c := range calls {
-		go func() {
-			err := e.RunTask(ctx, c)
-			if err == nil {
-				e.Logger.Errf(logger.Green, "task: task \"%s\" finished running\n", c.Task)
-			} else if !isContextError(err) {
-				e.Logger.Errf(logger.Red, "%v\n", err)
-			}
-		}()
-	}
 
 	var waitTime time.Duration
 	switch {
@@ -66,11 +58,12 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 	}
 	defer broker.Stop()
 
-	closeOnInterrupt(broker)
+	e.closeOnInterrupt(broker)
 
 	e.watchedDirs = xsync.NewMap[string, bool]()
 
 	broker.Start()
+	e.runWatchCycle(ctx, calls)
 
 	go func() {
 		for {
@@ -107,16 +100,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 
 				e.Compiler.ResetCache()
 
-				for _, c := range calls {
-					go func(ctx context.Context, c *Call) {
-						err := e.RunTask(ctx, c)
-						if err == nil {
-							e.Logger.Errf(logger.Green, "task: task \"%s\" finished running\n", c.Task)
-						} else if !isContextError(err) {
-							e.Logger.Errf(logger.Red, "%v\n", err)
-						}
-					}(ctx, c)
-				}
+				e.runWatchCycle(ctx, calls)
 			case err, ok := <-broker.Error():
 				switch {
 				case !ok:
@@ -153,11 +137,36 @@ func isContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-func closeOnInterrupt(broker *fsbroker.FSBroker) {
+// Each cycle owns one activity. Replacing it retires callbacks from older runs.
+func (e *Executor) runWatchCycle(ctx context.Context, calls []*Call) {
+	ctx, activity := e.beginTerminalStatus(ctx, calls)
+	g := new(errgroup.Group)
+	for _, c := range calls {
+		g.Go(func() error {
+			err := e.RunTask(ctx, c)
+			if err == nil {
+				e.Logger.Errf(logger.Green, "task: task \"%s\" finished running\n", c.Task)
+			} else if !isContextError(err) {
+				e.Logger.Errf(logger.Red, "%v\n", err)
+			}
+			return err
+		})
+	}
+	go func() {
+		if err := g.Wait(); err != nil {
+			activity.Finish(terminalOutcome(err))
+		} else {
+			activity.Finish(ansi.ProgramStateIdle, "Watching for changes")
+		}
+	}()
+}
+
+func (e *Executor) closeOnInterrupt(broker *fsbroker.FSBroker) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-ch
+		e.terminalStatus.Cancel()
 		broker.Stop()
 		os.Exit(0)
 	}()

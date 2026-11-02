@@ -12,9 +12,10 @@ var completionShells = []string{"bash", "zsh", "fish", "powershell", "nu"}
 
 // Keep in sync with the help strings in internal/flags/flags.go.
 var flagEnums = map[string][]string{
-	"output":     {"interleaved", "group", "prefixed"},
-	"sort":       {"default", "alphanumeric", "none"},
-	"completion": completionShells,
+	"output":          {"interleaved", "group", "prefixed"},
+	"sort":            {"default", "alphanumeric", "none"},
+	"completion":      completionShells,
+	"terminal-status": {"auto", "always", "never"},
 }
 
 // A flag absent here falls back to the shell's default file completion.

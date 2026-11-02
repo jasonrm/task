@@ -38,7 +38,10 @@ type MatchingTask struct {
 }
 
 // Run runs Task
-func (e *Executor) Run(ctx context.Context, calls ...*Call) error {
+func (e *Executor) Run(ctx context.Context, calls ...*Call) (runErr error) {
+	ctx, activity := e.beginTerminalStatus(ctx, calls)
+	activity.SetTitle()
+	defer func() { activity.Finish(terminalOutcome(runErr)) }()
 	// check if given tasks exist
 	for _, call := range calls {
 		task, err := e.GetTask(call)
@@ -74,7 +77,7 @@ func (e *Executor) Run(ctx context.Context, calls ...*Call) error {
 	}
 
 	// Prompt for all required vars from deps upfront (parallel execution)
-	if err := e.promptDepsVars(calls); err != nil {
+	if err := e.promptDepsVars(ctx, calls); err != nil {
 		return err
 	}
 
@@ -173,7 +176,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 	}
 
 	// Prompt for missing required vars after if check (avoid prompting if task won't run)
-	prompted, err := e.promptTaskVars(t, call)
+	prompted, err := e.promptTaskVars(ctx, t, call)
 	if err != nil {
 		return err
 	}
@@ -239,7 +242,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 
 		for _, p := range t.Prompt {
 			if p != "" && !e.Dry {
-				if err := e.Logger.Prompt(logger.Yellow, p, "n", "y", "yes"); errors.Is(err, logger.ErrNoTerminal) {
+				if err := e.prompt(ctx, "Confirm task execution", p); errors.Is(err, logger.ErrNoTerminal) {
 					return &errors.TaskCancelledNoTerminalError{TaskName: call.Task}
 				} else if errors.Is(err, logger.ErrPromptCancelled) {
 					return &errors.TaskCancelledByUserError{TaskName: call.Task}
@@ -257,7 +260,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 
 		for i := range t.Cmds {
 			if t.Cmds[i].Defer {
-				defer e.runDeferred(t, call, i, t.Vars, &deferredExitCode)
+				defer e.runDeferred(ctx, t, call, i, t.Vars, &deferredExitCode)
 				continue
 			}
 
@@ -339,8 +342,9 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task) error {
 	return g.Wait()
 }
 
-func (e *Executor) runDeferred(t *ast.Task, call *Call, i int, vars *ast.Vars, deferredExitCode *uint8) {
-	ctx, cancel := context.WithCancel(context.Background())
+func (e *Executor) runDeferred(ctx context.Context, t *ast.Task, call *Call, i int, vars *ast.Vars, deferredExitCode *uint8) {
+	// Cleanup must survive cancellation, while retaining the status generation.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 
 	cmd := t.Cmds[i]

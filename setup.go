@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sajari/fuzzy"
 
 	"github.com/go-task/task/v3/errors"
@@ -18,12 +19,32 @@ import (
 	"github.com/go-task/task/v3/internal/filepathext"
 	"github.com/go-task/task/v3/internal/logger"
 	"github.com/go-task/task/v3/internal/output"
+	"github.com/go-task/task/v3/internal/terminalstatus"
 	"github.com/go-task/task/v3/internal/version"
 	"github.com/go-task/task/v3/taskfile"
 	"github.com/go-task/task/v3/taskfile/ast"
 )
 
-func (e *Executor) Setup() error {
+func (e *Executor) Setup() (setupErr error) {
+	switch e.TerminalStatus {
+	case "", "auto", "always", "never":
+	default:
+		return errors.New("task: terminal-status must be auto, always or never")
+	}
+	e.setupStdFiles()
+	e.terminalStatus = terminalstatus.New(e.Stderr, e.TerminalStatus)
+	reporter := e.terminalStatus
+	if e.Dry || e.Summary {
+		reporter = nil
+	}
+	ctx, activity := reporter.Start(context.Background(), "task", "Loading Taskfile")
+	defer func() {
+		if setupErr != nil {
+			activity.Finish(terminalOutcome(setupErr))
+		} else {
+			activity.Finish(ansi.ProgramStateIdle, "Ready to run tasks")
+		}
+	}()
 	e.setupLogger()
 	node, err := e.getRootNode()
 	if err != nil {
@@ -32,10 +53,9 @@ func (e *Executor) Setup() error {
 	if err := e.setupTempDir(); err != nil {
 		return err
 	}
-	if err := e.readTaskfile(node); err != nil {
+	if err := e.readTaskfile(ctx, node); err != nil {
 		return err
 	}
-	e.setupStdFiles()
 	if err := e.setupOutput(); err != nil {
 		return err
 	}
@@ -72,14 +92,20 @@ func (e *Executor) getRootNode() (taskfile.Node, error) {
 	return node, err
 }
 
-func (e *Executor) readTaskfile(node taskfile.Node) error {
-	ctx, cf := context.WithTimeout(context.Background(), e.Timeout)
+func (e *Executor) readTaskfile(ctx context.Context, node taskfile.Node) error {
+	ctx, cf := context.WithTimeout(ctx, e.Timeout)
 	defer cf()
 	debugFunc := func(s string) {
 		e.Logger.VerboseOutf(logger.Magenta, s)
 	}
 	promptFunc := func(s string) error {
-		return e.Logger.Prompt(logger.Yellow, s, "n", "y", "yes")
+		err := e.prompt(ctx, "Trust remote Taskfile", s)
+		// The reader converts this into TaskfileNotTrustedError, losing the cause.
+		// Preserve user cancellation before that conversion.
+		if errors.Is(err, logger.ErrPromptCancelled) {
+			e.terminalStatus.Cancel()
+		}
+		return err
 	}
 	reader := taskfile.NewReader(
 		taskfile.WithInsecure(e.Insecure),

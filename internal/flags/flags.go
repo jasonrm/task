@@ -91,6 +91,7 @@ var (
 	CertKey             string
 	Interactive         bool
 	TempDir             string
+	TerminalStatus      string
 )
 
 func init() {
@@ -136,6 +137,7 @@ func init() {
 	pflag.BoolVarP(&ListAll, "list-all", "a", false, "Lists tasks with or without a description.")
 	pflag.BoolVarP(&ListJson, "json", "j", false, "Formats task list as JSON.")
 	pflag.StringVar(&TaskSort, "sort", "", "Changes the order of the tasks when listed. [default|alphanumeric|none].")
+	pflag.StringVar(&TerminalStatus, "terminal-status", getConfig(config, "TERMINAL_STATUS", func() *string { return nil }, "auto"), "Report terminal program status: [auto|always|never]. Never writes to redirected stderr.")
 	pflag.BoolVar(&Status, "status", false, "Exits with non-zero exit code if any of the given tasks is not up-to-date.")
 	pflag.BoolVar(&NoStatus, "no-status", false, "Ignore status when listing tasks as JSON")
 	pflag.BoolVar(&Nested, "nested", false, "Nest namespaces when listing tasks as JSON")
@@ -221,6 +223,11 @@ func isCI() bool {
 }
 
 func Validate() error {
+	switch TerminalStatus {
+	case "auto", "always", "never":
+	default:
+		return errors.New("task: --terminal-status must be auto, always or never")
+	}
 	if Download && Offline {
 		return errors.New("task: You can't set both --download and --offline flags")
 	}
@@ -299,7 +306,14 @@ func (o *flagsOption) ApplyToExecutor(e *task.Executor) {
 		}
 	}
 
+	// Informational commands must not produce program-status records, even when
+	// reporting is explicitly enabled. Library executors remain opt-in.
+	terminalStatus := TerminalStatus
+	if List || ListAll || ListJson || Summary || Dry || Status || ClearCache || complete.IsActive() {
+		terminalStatus = "never"
+	}
 	e.Options(
+		task.WithTerminalStatus(terminalStatus),
 		task.WithDir(dir),
 		task.WithEntrypoint(Entrypoint),
 		task.WithForce(Force),

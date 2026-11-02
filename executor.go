@@ -13,6 +13,7 @@ import (
 	"github.com/go-task/task/v3/internal/logger"
 	"github.com/go-task/task/v3/internal/output"
 	"github.com/go-task/task/v3/internal/sort"
+	"github.com/go-task/task/v3/internal/terminalstatus"
 	"github.com/go-task/task/v3/taskfile"
 	"github.com/go-task/task/v3/taskfile/ast"
 )
@@ -51,6 +52,7 @@ type (
 		AssumeYes           bool
 		AssumeTerm          bool // Used for testing
 		Interactive         bool
+		TerminalStatus      string // auto, always, never; disabled by default for library callers
 		Dry                 bool
 		Summary             bool
 		Parallel            bool
@@ -77,6 +79,7 @@ type (
 		fuzzyModel     *fuzzy.Model
 		fuzzyModelOnce sync.Once
 
+		terminalStatus       *terminalstatus.Reporter
 		promptedVars         *ast.Vars // vars collected via interactive prompts
 		concurrencySemaphore chan struct{}
 		taskCallCount        map[string]*int32

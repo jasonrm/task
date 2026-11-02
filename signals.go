@@ -20,6 +20,7 @@ func (e *Executor) InterceptInterruptSignals() {
 	go func() {
 		for i := range maxInterruptSignals {
 			sig := <-ch
+			e.terminalStatus.Cancel()
 
 			if i+1 >= maxInterruptSignals {
 				e.Logger.Errf(logger.Red, "task: Signal received for the third time: %q. Forcing shutdown\n", sig)
