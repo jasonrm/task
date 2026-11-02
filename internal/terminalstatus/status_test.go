@@ -40,8 +40,11 @@ func reports(t *testing.T, b *bytes.Buffer) []map[string]string {
 			}
 			report[key] = value
 		}
-		require.Equal(t, "task", report["app"])
-		require.Empty(t, report["id"], "top-level invocations must replace the root record")
+		if report["state"] == "clear" {
+			require.NotEmpty(t, report["id"], "must never clear the terminal root")
+		} else {
+			require.Equal(t, "task", report["app"])
+		}
 		result = append(result, report)
 	}
 	return result

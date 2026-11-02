@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -87,9 +86,11 @@ func TestTerminalStatusExecution(t *testing.T) { //nolint:paralleltest // isolat
 			}
 			require.NoError(t, slave.Close())
 			output := <-captured
-			records := regexp.MustCompile(`\x1b\]7501;[^\x07]*\x07`).FindAllString(output, -1)
+			records := rootRecords(t, output)
 			require.NotEmpty(t, records)
-			require.Contains(t, records[len(records)-1], "state="+tc.terminalState+":")
+			final := records[len(records)-1]
+			require.Equal(t, tc.terminalState, final.State)
+			require.Len(t, remainingRecords(t, output), 1)
 			stdoutBytes, err := os.ReadFile(stdout.Name())
 			require.NoError(t, err)
 			require.NotContains(t, string(stdoutBytes), "\x1b]7501;")
@@ -98,12 +99,15 @@ func TestTerminalStatusExecution(t *testing.T) { //nolint:paralleltest // isolat
 			require.Equal(t, 1, strings.Count(output, title))
 			require.NotContains(t, output, "\x1b[22;2t")
 			require.NotContains(t, output, "\x1b[23;2t")
-			require.True(t, strings.HasSuffix(output, records[len(records)-1]))
-			for _, record := range records {
-				require.NotContains(t, record, ":id=")
-			}
+			require.Contains(t, output, final.Sequence)
 			if tc.terminalState == "done" {
-				require.Equal(t, 1, strings.Count(output, "state=done:"))
+				count := 0
+				for _, record := range records {
+					if record.State == "done" {
+						count++
+					}
+				}
+				require.Equal(t, 1, count)
 			}
 			if tc.input != "" {
 				require.Contains(t, output, "state=blocked:")
@@ -114,7 +118,7 @@ func TestTerminalStatusExecution(t *testing.T) { //nolint:paralleltest // isolat
 			}
 			for _, marker := range []string{"slow-finished\r\n", "cleanup-finished\r\n"} {
 				if index := strings.LastIndex(output, marker); index >= 0 {
-					require.Greater(t, strings.LastIndex(output, records[len(records)-1]), index)
+					require.Greater(t, strings.LastIndex(output, final.Sequence), index)
 				}
 			}
 		})

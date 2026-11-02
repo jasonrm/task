@@ -319,7 +319,8 @@ TASK_TERMINAL_STATUS=never task build
 Task reports working, completed, failed, and waiting-for-input states for its own
 prompts. Watch mode reports idle after a successful cycle and preserves failure
 until the next cycle; interruption reports idle. Parallel tasks finish as one
-invocation. Status messages do not contain commands, raw errors, or entered values.
+invocation, with separate scoped records for in-process task calls. Status
+messages do not contain commands, raw errors, or entered values.
 Task does not infer readiness or input waits inside arbitrary child programs.
 
 The outer Task invocation owns the root status record. Repeated invocations
@@ -327,7 +328,25 @@ replace that record rather than creating a history of completed child records.
 External nested Task processes inherit an internal environment marker and do not
 report their own status or titles, even with `always`; their outcome is reflected
 by the parent. This also means their input waits are not reported by the parent.
-Dependencies within the same Task process still use the outer activity.
+Dependencies within the same Task process report independently under a private
+invocation namespace. The root summarizes their visible states: blocked, error,
+working, then idle. Tasks waiting on children do not contribute another working
+state. Successful children retire; errors remain until handled or incorporated
+into the final root outcome, then Task clears its namespace. Watch restarts and
+cancellation also retire these records.
+
+Individual tasks can suppress states without disabling titles or other reporting:
+
+```yaml
+tasks:
+  dev:
+    terminal_status: { suppress: [working] }
+    cmds: [npm run dev]
+```
+
+Suppressed states become neutral idle, not silent updates that leave stale UI.
+This policy is not inherited by dependencies or called tasks. See the
+[`terminal_status` schema reference](./schema.md#terminal_status) for details.
 
 Task sets the invocation title once. Dependencies and watch cycles do not rename
 it, and completion or cancellation updates only the status record. The shell is

@@ -54,8 +54,17 @@ func (e *Executor) beginTerminalStatus(ctx context.Context, calls []*Call) (cont
 	return reporter.Start(ctx, "task "+strings.Join(names, " "), "Running tasks")
 }
 
+func finishTerminalTask(ctx context.Context, activity *terminalstatus.Activity, err error) {
+	outcome := terminalOutcome(err)
+	if cause := context.Cause(ctx); err != nil && cause != nil {
+		caused := terminalOutcome(cause)
+		outcome.State, outcome.Message, outcome.Cause = caused.State, caused.Message, cause
+	}
+	activity.FinishOutcome(outcome)
+}
+
 // Error semantics belong to Task, not to the terminal protocol adapter.
-func terminalOutcome(err error) (ansi.ProgramState, string) {
+func terminalOutcome(err error) terminalstatus.Outcome {
 	state, message := ansi.ProgramStateDone, "Tasks finished"
 	var cancelled *errors.TaskCancelledByUserError
 	switch {
@@ -64,5 +73,5 @@ func terminalOutcome(err error) (ansi.ProgramState, string) {
 	case err != nil:
 		state, message = ansi.ProgramStateError, "Task failed"
 	}
-	return state, message
+	return terminalstatus.Outcome{State: state, Message: message, Err: err}
 }

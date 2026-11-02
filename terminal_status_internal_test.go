@@ -31,9 +31,10 @@ func TestTerminalOutcome(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			state, message := terminalOutcome(tc.err)
-			require.Equal(t, tc.state, state)
-			require.Equal(t, tc.message, message)
+			outcome := terminalOutcome(tc.err)
+			require.Equal(t, tc.state, outcome.State)
+			require.Equal(t, tc.message, outcome.Message)
+			require.Equal(t, tc.err, outcome.Err)
 		})
 	}
 }

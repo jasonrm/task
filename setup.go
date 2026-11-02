@@ -40,7 +40,7 @@ func (e *Executor) Setup() (setupErr error) {
 	ctx, activity := reporter.Start(context.Background(), "task", "Loading Taskfile")
 	defer func() {
 		if setupErr != nil {
-			activity.Finish(terminalOutcome(setupErr))
+			activity.FinishOutcome(terminalOutcome(setupErr))
 		} else {
 			activity.Finish(ansi.ProgramStateIdle, "Ready to run tasks")
 		}

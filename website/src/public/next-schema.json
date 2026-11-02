@@ -70,6 +70,21 @@
           "description": "A short description of the task. This is displayed when calling `task --list`.",
           "type": "string"
         },
+        "terminal_status": {
+          "description": "Terminal reporting policy for this task only; not inherited by dependencies or task calls. Suppressed states report neutral idle instead.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "suppress": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": ["idle", "working", "blocked", "done", "error"]
+              }
+            }
+          }
+        },
         "prompt": {
           "description": "One or more prompts that will be presented before a task is run. Declining will cancel running the current and any subsequent tasks.",
           "oneOf": [

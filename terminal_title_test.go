@@ -59,11 +59,26 @@ tasks:
 	}
 	require.NoError(t, slave.Close())
 	output := <-captured
-	require.NotContains(t, output, ":id=")
-	require.Equal(t, 2, strings.Count(output, "state=done:"))
+	roots := rootRecords(t, output)
+	done := 0
+	for _, record := range roots {
+		if record.State == "done" {
+			done++
+		}
+	}
+	require.Equal(t, 2, done)
+	require.Len(t, remainingRecords(t, output), 1)
+	// Exactly two in-process task calls per invocation; external children are silent.
+	ids := map[string]bool{}
+	for _, record := range terminalRecords(t, output) {
+		if record.State != "clear" && record.ID != "" {
+			ids[record.ID] = true
+		}
+	}
+	require.Len(t, ids, 4)
 	require.Equal(t, 2, strings.Count(output, "\x1b]2;task outer\x07"))
 	require.Equal(t, 2, strings.Count(output, "\x1b]2;"))
 	require.NotContains(t, output, "\x1b[22;2t")
 	require.NotContains(t, output, "\x1b[23;2t")
-	require.NotContains(t, output, "state=clear")
+	require.Contains(t, output, "state=clear:id=")
 }

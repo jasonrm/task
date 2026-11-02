@@ -21,6 +21,7 @@ import (
 	"github.com/go-task/task/v3/internal/sort"
 	"github.com/go-task/task/v3/internal/summary"
 	"github.com/go-task/task/v3/internal/templater"
+	"github.com/go-task/task/v3/internal/terminalstatus"
 	"github.com/go-task/task/v3/taskfile/ast"
 )
 
@@ -41,7 +42,7 @@ type MatchingTask struct {
 func (e *Executor) Run(ctx context.Context, calls ...*Call) (runErr error) {
 	ctx, activity := e.beginTerminalStatus(ctx, calls)
 	activity.SetTitle()
-	defer func() { activity.Finish(terminalOutcome(runErr)) }()
+	defer func() { activity.FinishOutcome(terminalOutcome(runErr)) }()
 	// check if given tasks exist
 	for _, call := range calls {
 		task, err := e.GetTask(call)
@@ -127,7 +128,7 @@ func (e *Executor) splitRegularAndWatchCalls(calls ...*Call) (regularCalls []*Ca
 }
 
 // RunTask runs a task by its name
-func (e *Executor) RunTask(ctx context.Context, call *Call) error {
+func (e *Executor) RunTask(ctx context.Context, call *Call) (runErr error) {
 	// Inject prompted vars into call if available
 	if e.promptedVars != nil {
 		if call.Vars == nil {
@@ -149,6 +150,11 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		e.Logger.VerboseOutf(logger.Yellow, `task: %q not for current platform - ignored\n`, call.Task)
 		return nil
 	}
+
+	// A record spans this call, including dependencies and deferred cleanup.
+	// Child calls temporarily make their parent a waiter, not another busy worker.
+	ctx, activity := terminalstatus.StartTask(ctx, call.Task, t.TerminalStatus.Suppress)
+	defer func() { finishTerminalTask(ctx, activity, runErr) }()
 
 	// Check required vars early (before template compilation) if we can't prompt.
 	// This gives a clear "missing required variables" error instead of a template error.
@@ -270,6 +276,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 				}
 
 				if t.IgnoreError && isCommandFailure(err) {
+					terminalstatus.Ignore(ctx, err)
 					e.Logger.VerboseErrf(logger.Yellow, "task: task error ignored: %v\n", err)
 					continue
 				}
@@ -363,6 +370,7 @@ func (e *Executor) runDeferred(ctx context.Context, t *ast.Task, call *Call, i i
 	cmd.Vars = templater.ReplaceVarsWithExtra(cmd.Vars, cache, extra)
 
 	if err := e.runCommand(ctx, t, call, i); err != nil {
+		terminalstatus.Ignore(ctx, err)
 		e.Logger.VerboseErrf(logger.Yellow, "task: ignored error in deferred cmd: %s\n", err.Error())
 	}
 }
@@ -404,6 +412,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 			err = timeout
 		}
 		if cmd.IgnoreError && isCommandFailure(err) {
+			terminalstatus.Ignore(ctx, err)
 			e.Logger.VerboseErrf(logger.Yellow, "task: [%s] task error ignored: %v\n", t.Name(), err)
 			return nil
 		}

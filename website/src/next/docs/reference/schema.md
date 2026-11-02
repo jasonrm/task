@@ -555,6 +555,56 @@ tasks:
       This includes building, testing, and uploading artifacts.
 ```
 
+#### `terminal_status`
+
+Controls terminal status reporting for this task. It does not affect execution,
+exit codes, console output, or the invocation title. Requires terminal reporting
+to be enabled (see [`--terminal-status`](./cli.md#--terminal-status-mode)).
+
+```yaml
+tasks:
+  dev:
+    terminal_status:
+      suppress: [working]
+    deps: [install:npm, install:composer]
+    cmds:
+      - npm run dev
+
+  install:npm:
+    cmds: [npm ci]
+
+  install:composer:
+    cmds: [composer install]
+```
+
+`suppress` is an array of states: `idle`, `working`, `blocked`, `done`, or `error`.
+The default is an empty array. Unknown or duplicate states are errors. `clear` is
+record cleanup, not a state, and cannot be suppressed.
+
+Use `[working]` for long-running servers: their normal execution reports neutral
+idle, while input waits and failures still report normally. This does **not**
+claim that a server is ready or healthy. Suppression sends neutral idle rather
+than leaving a stale spinner or reporting success. Suppressing `idle` has no
+additional state effect; suppressing `blocked` or `error` hides that attention
+signal, so use those options carefully.
+
+The policy is local to the task, including its setup and deferred commands. It is
+not inherited by dependencies or tasks called through `cmds`. In the example,
+both installs have independent working records and the invocation stays busy
+until they finish. A task waiting on child calls is not itself counted as busy;
+when only quiet servers remain, the root summary becomes idle.
+
+Task reports a root summary plus scoped records for in-process task calls.
+Blocked records take priority over errors, then working, then idle in the root
+summary. Successful child records retire; failures remain until handled with
+`ignore_error` or incorporated into the final invocation outcome. Watch restarts
+and cancellation retire the invocation's children without clearing other
+programs' records. Terminal software decides how to display or group records.
+
+Early shared variable prompts and Taskfile loading belong to the invocation,
+not an individual task. External nested Task processes still defer reporting to
+the parent; Task does not infer input waits or progress inside arbitrary commands.
+
 #### `prompt`
 
 - **Type**: `string` or `[]string`

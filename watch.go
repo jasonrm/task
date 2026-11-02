@@ -154,7 +154,7 @@ func (e *Executor) runWatchCycle(ctx context.Context, calls []*Call) {
 	}
 	go func() {
 		if err := g.Wait(); err != nil {
-			activity.Finish(terminalOutcome(err))
+			activity.FinishOutcome(terminalOutcome(err))
 		} else {
 			activity.Finish(ansi.ProgramStateIdle, "Watching for changes")
 		}
